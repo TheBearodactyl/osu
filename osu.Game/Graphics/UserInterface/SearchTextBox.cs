@@ -1,9 +1,16 @@
 ﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
+using System.Linq;
+using System.Text.RegularExpressions;
+using osu.Framework.Allocation;
+using osu.Framework.Graphics;
+using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Shapes;
 using osu.Framework.Input;
 using osu.Framework.Input.Events;
 using osu.Game.Resources.Localisation.Web;
+using osuTK.Graphics;
 using osuTK.Input;
 
 namespace osu.Game.Graphics.UserInterface
@@ -12,10 +19,77 @@ namespace osu.Game.Graphics.UserInterface
     {
         protected virtual bool AllowCommit => false;
 
+        private static readonly Regex filter_regex = new Regex(
+            @"\b(?<key>\w+)(?<op>(!?(:|=)|(>|<)(:|=)?))(?<value>("".*?""[!]?)|(\S*))",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private Container filterHighlightContainer = null!;
+
         public SearchTextBox()
         {
             Height = 35;
             PlaceholderText = HomeStrings.SearchPlaceholder;
+        }
+
+        [BackgroundDependencyLoader]
+        private void load()
+        {
+            TextContainer.Add(filterHighlightContainer = new Container
+            {
+                Depth = float.MaxValue,
+                RelativeSizeAxes = Axes.Both,
+            });
+        }
+
+        protected override void OnUserTextAdded(string added)
+        {
+            base.OnUserTextAdded(added);
+            updateFilterHighlights();
+        }
+
+        private void updateFilterHighlights()
+        {
+            filterHighlightContainer.Clear();
+
+            if (string.IsNullOrEmpty(Text))
+                return;
+
+            var matches = filter_regex.Matches(Text);
+            var textChars = TextFlow.Children.ToList();
+
+            foreach (Match match in matches)
+            {
+                if (!match.Success || match.Index >= textChars.Count)
+                    continue;
+
+                int startIndex = match.Index;
+                int endIndex = match.Index + match.Length;
+
+                if (endIndex > textChars.Count)
+                    endIndex = textChars.Count;
+
+                float startX = startIndex > 0 ? textChars[startIndex - 1].DrawPosition.X + textChars[startIndex - 1].DrawWidth : 0;
+                float endX = endIndex > 0 && endIndex <= textChars.Count ? textChars[endIndex - 1].DrawPosition.X + textChars[endIndex - 1].DrawWidth : startX;
+
+                float width = endX - startX;
+
+                if (width <= 0)
+                    continue;
+
+                filterHighlightContainer.Add(new Container
+                {
+                    Position = new osuTK.Vector2(startX, 0),
+                    Size = new osuTK.Vector2(endX, TextFlow.DrawHeight),
+                    Masking = true,
+                    CornerRadius = 3,
+                    Child = new Box
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                        Colour = Color4.Black,
+                        Alpha = 0.25f
+                    }
+                });
+            }
         }
 
         public override bool OnPressed(KeyBindingPressEvent<PlatformAction> e)
